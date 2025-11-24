@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="hero">
+    <h1>Asisten Kesehatan Pribadi Anda</h1>
+    <p>Rekam keluhan kesehatan Anda dengan suara, dan biarkan AI kami menganalisis dan meringkasnya untuk Anda. Mudah,
+        Cepat, dan Akurat.</p>
+
+    {% if not current_user.is_authenticated %}
+    <a href="{{ url_for('main.register') }}" class="btn btn-primary">Mulai Sekarang</a>
+    <a href="{{ url_for('main.login') }}" class="btn btn-outline">Masuk</a>
+    {% else %}
+    <a href="{{ url_for('main.dashboard') }}" class="btn btn-primary">Ke Dashboard</a>
+    {% endif %}
+</div>
+
+<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 2rem; margin-top: 3rem;">
+    <div class="feature-card" style="text-align: center; padding: 2rem;">
+        <i class="fas fa-microphone-alt" style="font-size: 3rem; color: var(--primary-color); margin-bottom: 1rem;"></i>
+        <h3>Rekam Suara</h3>
+        <p>Cukup ucapkan keluhan Anda, tidak perlu mengetik panjang lebar.</p>
+    </div>
+    <div class="feature-card" style="text-align: center; padding: 2rem;">
+        <i class="fas fa-brain" style="font-size: 3rem; color: var(--primary-color); margin-bottom: 1rem;"></i>
+        <h3>Analisis AI</h3>
+        <p>Teknologi Gemini AI akan mengekstrak data vital dan gejala penting.</p>
+    </div>
+    <div class="feature-card" style="text-align: center; padding: 2rem;">
+        <i class="fas fa-file-medical-alt"
+            style="font-size: 3rem; color: var(--primary-color); margin-bottom: 1rem;"></i>
+        <h3>Riwayat Medis</h3>
+        <p>Simpan semua catatan kesehatan Anda dalam satu tempat yang aman.</p>
+    </div>
+</div>
+{% endblock %}

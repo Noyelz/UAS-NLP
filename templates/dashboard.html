@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="dashboard-header">
+    <h2>Halo, {{ current_user.username }}</h2>
+    <p>Pantau kesehatan Anda hari ini.</p>
+</div>
+
+<div class="voice-recorder">
+    <h3>Rekam Keluhan</h3>
+    <p style="margin-bottom: 1.5rem;">Klik ikon mikrofon dan mulai bicara tentang kondisi kesehatan Anda.</p>
+
+    <button id="recordButton" class="mic-btn">
+        <i class="fas fa-microphone"></i>
+    </button>
+
+    <p id="statusText" class="status-text">Siap merekam...</p>
+</div>
+
+<h3 style="margin-bottom: 1rem;">Riwayat Kesehatan</h3>
+
+<div id="recordsList">
+    {% for record in records %}
+    <div class="record-card">
+        <div class="record-meta">
+            <i class="far fa-clock"></i> {{ record.created_at.strftime('%d %B %Y, %H:%M') }}
+        </div>
+        <div class="record-summary">
+            {{ record.summary }}
+        </div>
+    </div>
+    {% else %}
+    <p style="text-align: center; color: var(--light-text);">Belum ada riwayat kesehatan.</p>
+    {% endfor %}
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/recorder.js') }}"></script>
+{% endblock %}
