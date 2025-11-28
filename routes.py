@@ -1,10 +1,10 @@
 import os
-from flask import Blueprint, render_template, redirect, url_for, request, flash, jsonify
+from flask import Blueprint, render_template, redirect, url_for, request, flash, jsonify, session
 from flask_login import login_user, logout_user, login_required, current_user
 from werkzeug.utils import secure_filename
 from extensions import db
 from models import User, HealthRecord
-from services import process_audio_with_gemini
+from services import process_interview_step, generate_final_summary
 
 main_bp = Blueprint('main', __name__)
 
@@ -66,43 +66,132 @@ def dashboard():
     records = HealthRecord.query.filter_by(user_id=current_user.id).order_by(HealthRecord.created_at.desc()).all()
     return render_template('dashboard.html', records=records)
 
-@main_bp.route('/api/process_audio', methods=['POST'])
+
+# --- Interview Routes ---
+
+INTERVIEW_QUESTIONS = [
+    {
+        "id": 1,
+        "text": "Berapa suhu badan Anda saat ini? (Sebutkan angkanya jika tahu)",
+        "key": "suhu_badan"
+    },
+    {
+        "id": 2,
+        "text": "Sudah berapa lama Anda mengalami batuk?",
+        "key": "durasi_batuk"
+    },
+    {
+        "id": 3,
+        "text": "Apakah batuk Anda disertai dahak atau darah?",
+        "key": "jenis_batuk"
+    },
+    {
+        "id": 4,
+        "text": "Apakah Anda mengalami penurunan berat badan yang drastis belakangan ini?",
+        "key": "berat_badan"
+    },
+    {
+        "id": 5,
+        "text": "Apakah Anda sering berkeringat di malam hari meskipun tidak beraktivitas?",
+        "key": "keringat_malam"
+    }
+]
+
+@main_bp.route('/interview')
 @login_required
-def process_audio():
+def interview():
+    return render_template('interview.html')
+
+
+
+@main_bp.route('/api/interview/start', methods=['POST'])
+@login_required
+def start_interview():
+    session['interview_answers'] = {}
+    session['current_step'] = 1
+    return jsonify({
+        'step': 1,
+        'total_steps': len(INTERVIEW_QUESTIONS),
+        'question': INTERVIEW_QUESTIONS[0]
+    })
+
+@main_bp.route('/api/interview/step', methods=['POST'])
+@login_required
+def interview_step():
     if 'audio' not in request.files:
-        return jsonify({'error': 'No audio file provided'}), 400
+        return jsonify({'error': 'No audio provided'}), 400
         
+    step_id = int(request.form.get('step_id', 1))
     audio_file = request.files['audio']
-    if audio_file.filename == '':
-        return jsonify({'error': 'No selected file'}), 400
+    
+    # Validate step
+    if step_id < 1 or step_id > len(INTERVIEW_QUESTIONS):
+        return jsonify({'error': 'Invalid step'}), 400
         
-    # Save temporarily
-    filename = secure_filename(f"temp_{current_user.id}_{audio_file.filename}")
+    question_obj = INTERVIEW_QUESTIONS[step_id - 1]
+    
+    # Save temp
+    filename = secure_filename(f"step_{step_id}_{current_user.id}_{audio_file.filename}")
     filepath = os.path.join('static', 'uploads', filename)
-    
-    # Ensure uploads dir exists
     os.makedirs(os.path.join('static', 'uploads'), exist_ok=True)
-    
     audio_file.save(filepath)
     
-    # Debug: Check file size
-    file_size = os.path.getsize(filepath)
-    print(f"Uploaded file: {filepath}, Size: {file_size} bytes")
+    # Process
+    result = process_interview_step(filepath, question_obj['text'])
+    print(f"Step result: {result}")
     
-    if file_size < 100: # If file is too small (e.g. empty)
-        return jsonify({'error': 'Audio file is too short or empty'}), 400
-    
-    # Process with Gemini
-    result = process_audio_with_gemini(filepath)
-    
-    # Clean up temp file
+    # Cleanup
     if os.path.exists(filepath):
         os.remove(filepath)
         
-    # Save record
-    # Note: result is expected to be a string or JSON string from Gemini
-    new_record = HealthRecord(user_id=current_user.id, raw_text="Audio processed", summary=str(result))
+    if 'error' in result:
+        return jsonify({'error': result['error']}), 500
+        
+    # Store answer
+    if 'interview_answers' not in session:
+        session['interview_answers'] = {}
+    
+    # We need to re-assign session dict to ensure it saves
+    answers = session['interview_answers']
+    answers[question_obj['key']] = result['text']
+    session['interview_answers'] = answers
+    
+    # Determine next
+    next_step = step_id + 1
+    if next_step > len(INTERVIEW_QUESTIONS):
+        return jsonify({
+            'finished': True,
+            'answer_text': result['text']
+        })
+    else:
+        return jsonify({
+            'finished': False,
+            'next_step': next_step,
+            'next_question': INTERVIEW_QUESTIONS[next_step - 1],
+            'answer_text': result['text']
+        })
+
+@main_bp.route('/api/interview/finish', methods=['POST'])
+@login_required
+def finish_interview():
+    answers = session.get('interview_answers', {})
+    if not answers:
+        return jsonify({'error': 'No answers found'}), 400
+        
+    # Generate Summary
+    summary_json = generate_final_summary(answers)
+    
+    # Save Record
+    new_record = HealthRecord(
+        user_id=current_user.id, 
+        raw_text="TB Interview Checkup", 
+        summary=str(summary_json) # Store as string representation of JSON
+    )
     db.session.add(new_record)
     db.session.commit()
     
-    return jsonify({'success': True, 'data': result})
+    # Clear session
+    session.pop('interview_answers', None)
+    session.pop('current_step', None)
+    
+    return jsonify({'success': True, 'data': summary_json})

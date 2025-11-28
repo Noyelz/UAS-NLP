@@ -1,6 +1,9 @@
 flask
 flask-sqlalchemy
 flask-login
-google-generativeai
 python-dotenv
 email_validator
+faster-whisper
+llama-cpp-python
+huggingface-hub
+

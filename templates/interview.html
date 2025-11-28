@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="interview-container" style="max-width: 800px; margin: 0 auto;">
+    <div class="interview-header" style="text-align: center; margin-bottom: 2rem;">
+        <h2>Pemeriksaan Tuberculosis (TB)</h2>
+        <p>Jawablah pertanyaan berikut dengan suara Anda.</p>
+        <div class="progress-bar" style="background: #eee; height: 10px; border-radius: 5px; margin-top: 1rem; overflow: hidden;">
+            <div id="progressFill" style="background: var(--primary-color); width: 0%; height: 100%; transition: width 0.3s;"></div>
+        </div>
+        <p id="stepIndicator" style="margin-top: 0.5rem; color: #666;">Langkah 1 dari 5</p>
+    </div>
+
+    <div id="questionCard" class="feature-card" style="padding: 2rem; text-align: center;">
+        <h3 id="questionText" style="margin-bottom: 2rem; font-size: 1.5rem;">Memuat pertanyaan...</h3>
+
+        <div class="voice-recorder">
+            <button id="recordButton" class="mic-btn" style="width: 80px; height: 80px; font-size: 2rem;">
+                <i class="fas fa-microphone"></i>
+            </button>
+            <p id="statusText" class="status-text" style="margin-top: 1rem;">Klik untuk mulai merekam jawaban</p>
+        </div>
+
+        <div id="answerContainer" style="margin-top: 2rem; display: none; text-align: left; background: #f9f9f9; padding: 1rem; border-radius: 8px;">
+            <strong>Jawaban Anda:</strong>
+            <p id="answerText" style="margin-bottom: 0;"></p>
+        </div>
+
+        <div id="actionButtons" style="margin-top: 2rem; display: none;">
+            <button id="nextButton" class="btn btn-primary">Pertanyaan Selanjutnya <i class="fas fa-arrow-right"></i></button>
+            <button id="retryButton" class="btn btn-outline">Rekam Ulang</button>
+        </div>
+    </div>
+
+    <div id="resultCard" class="feature-card" style="padding: 2rem; display: none;">
+        <h3 style="text-align: center; margin-bottom: 2rem;">Hasil Analisis</h3>
+        <div id="resultContent">
+            <!-- Results will be injected here -->
+        </div>
+        <div style="text-align: center; margin-top: 2rem;">
+            <a href="{{ url_for('main.dashboard') }}" class="btn btn-primary">Kembali ke Dashboard</a>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/interview.js') }}"></script>
+{% endblock %}

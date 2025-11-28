@@ -7,17 +7,16 @@
 </div>
 
 <div class="voice-recorder">
-    <h3>Rekam Keluhan</h3>
-    <p style="margin-bottom: 1.5rem;">Klik ikon mikrofon dan mulai bicara tentang kondisi kesehatan Anda.</p>
+    <h3>Pemeriksaan Kesehatan TB</h3>
+    <p style="margin-bottom: 1.5rem;">Lakukan pemeriksaan mandiri Tuberculosis dengan menjawab 5 pertanyaan panduan.</p>
 
-    <button id="recordButton" class="mic-btn">
-        <i class="fas fa-microphone"></i>
-    </button>
-
-    <p id="statusText" class="status-text">Siap merekam...</p>
+    <a href="{{ url_for('main.interview') }}" class="btn btn-primary"
+        style="text-decoration: none; display: inline-block; padding: 1rem 2rem; font-size: 1.1rem;">
+        <i class="fas fa-stethoscope"></i> Mulai Pemeriksaan
+    </a>
 </div>
 
-<h3 style="margin-bottom: 1rem;">Riwayat Kesehatan</h3>
+<h3 style="margin-bottom: 1rem; margin-top: 3rem;">Riwayat Kesehatan</h3>
 
 <div id="recordsList">
     {% for record in records %}
@@ -36,5 +35,5 @@
 {% endblock %}
 
 {% block scripts %}
-<script src="{{ url_for('static', filename='js/recorder.js') }}"></script>
+<!-- No extra scripts needed for dashboard now -->
 {% endblock %}
