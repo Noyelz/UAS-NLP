@@ -24,6 +24,9 @@ IF %ERRORLEVEL% EQU 0 (
     REM Ensure llama-cpp-python is installed
     python -m pip install llama-cpp-python==0.2.90 --extra-index-url https://abetlen.github.io/llama-cpp-python/whl/cpu
     
+    REM Ensure ffmpeg is installed (crucial for audio)
+    call conda install -c conda-forge ffmpeg -y
+    
     REM Ensure other dependencies are installed
     pip install -r requirements.txt
     
@@ -52,6 +55,9 @@ IF %ERRORLEVEL% NEQ 0 (
     echo [WARNING] Pip install failed. Switching to Conda-forge (slower but reliable)...
     call conda install -c conda-forge llama-cpp-python -y
 )
+
+echo Installing FFmpeg...
+call conda install -c conda-forge ffmpeg -y
 
 pip install -r requirements.txt
 

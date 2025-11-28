@@ -42,12 +42,50 @@ def process_interview_step(audio_path, question):
         if not load_models():
             return {"error": "Model AI belum didownload. Jalankan download_models.py."}
 
-        # 1. Transcribe
-        print(f"Processing audio: {audio_path}")
-        segments, info = whisper_model.transcribe(audio_path, beam_size=5, language="id")
-        transcribed_text = " ".join([segment.text for segment in segments]).strip()
-        print(f"Transcribed text: '{transcribed_text}'")
+        # 1. Check file size
+        file_size = os.path.getsize(audio_path)
+        print(f"Processing audio: {audio_path} (Size: {file_size} bytes)")
         
+        if file_size < 1000: # Less than 1KB is likely empty/silence
+            print("Audio file too small, returning empty.")
+            return {"text": "Tidak terdengar suara."}
+
+        # 2. Convert to WAV using ffmpeg (Force conversion to avoid container issues)
+        wav_path = audio_path + ".wav"
+        os.system(f'ffmpeg -i "{audio_path}" -ar 16000 -ac 1 -c:a pcm_s16le "{wav_path}" -y')
+        
+        if not os.path.exists(wav_path):
+            print("FFmpeg conversion failed.")
+            return {"error": "Gagal memproses audio (FFmpeg error)."}
+
+        # 3. Transcribe
+        # Try with VAD disabled and specific parameters for short audio
+        print("Transcribing with language='id' and vad_filter=False...")
+        segments, info = whisper_model.transcribe(
+            wav_path, 
+            beam_size=5, 
+            language="id",
+            vad_filter=False,
+            condition_on_previous_text=False
+        )
+        transcribed_text = " ".join([segment.text for segment in segments]).strip()
+        print(f"Transcribed text (ID): '{transcribed_text}'")
+        
+        # Fallback: Auto-detect language if empty
+        if not transcribed_text:
+            print("Retrying with auto language detection...")
+            segments, info = whisper_model.transcribe(
+                wav_path, 
+                beam_size=5, 
+                vad_filter=False
+            )
+            transcribed_text = " ".join([segment.text for segment in segments]).strip()
+            print(f"Transcribed text (Auto): '{transcribed_text}'")
+
+        # Cleanup WAV
+        if os.path.exists(wav_path):
+            os.remove(wav_path)
+            
         if not transcribed_text:
             return {"text": "Tidak terdengar suara."}
             
