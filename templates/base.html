@@ -1,46 +1,50 @@
 <!DOCTYPE html>
 <html lang="id">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>HealthVoice - Asisten Kesehatan Cerdas</title>
+    <title>HealthVoice Transcription</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
 </head>
+
 <body>
     <nav class="navbar">
-        <a href="{{ url_for('main.index') }}" class="navbar-brand">
-            <i class="fas fa-heartbeat"></i> HealthVoice
+        <a href="/" class="navbar-brand">
+            <i class="fas fa-wave-square"></i> HealthVoice
         </a>
+
         <div class="nav-links">
             {% if current_user.is_authenticated %}
-                <a href="{{ url_for('main.dashboard') }}">Dashboard</a>
-                <a href="{{ url_for('main.logout') }}">Keluar</a>
+            <a href="{{ url_for('main.transcription') }}" class="nav-link">Transkripsi</a>
+
+            {% if current_user.role in ['admin_ii', 'admin_iii'] %}
+            <a href="{{ url_for('main.admin_dashboard') }}" class="nav-link">Dashboard Admin</a>
+            {% endif %}
+
+            <a href="{{ url_for('main.profile') }}" class="nav-link">Profil</a>
+            <a href="{{ url_for('main.logout') }}" class="nav-link btn-logout">Keluar</a>
             {% else %}
-                <a href="{{ url_for('main.login') }}">Masuk</a>
-                <a href="{{ url_for('main.register') }}" class="btn btn-primary">Daftar</a>
+            <a href="{{ url_for('main.login') }}" class="nav-link">Masuk</a>
+            <a href="{{ url_for('main.register') }}" class="nav-link">Daftar</a>
             {% endif %}
         </div>
     </nav>
 
     <div class="container">
         {% with messages = get_flashed_messages() %}
-            {% if messages %}
-                <div class="flash-messages">
-                    {% for message in messages %}
-                        <div class="flash-message">{{ message }}</div>
-                    {% endfor %}
-                </div>
-            {% endif %}
+        {% if messages %}
+        {% for message in messages %}
+        <div class="alert">{{ message }}</div>
+        {% endfor %}
+        {% endif %}
         {% endwith %}
-        
+
         {% block content %}{% endblock %}
     </div>
 
-    <footer>
-        <p>&copy; 2024 HealthVoice. Solusi Kesehatan Digital Anda.</p>
-    </footer>
-
     {% block scripts %}{% endblock %}
 </body>
+
 </html>

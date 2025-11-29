@@ -33,139 +33,79 @@ def load_models():
             
     return True
 
-def process_interview_step(audio_path, question):
+def process_transcription(audio_path):
     """
-    Process a single interview step: Audio -> Text -> (Optional Refinement)
-    For local, we primarily need the transcription.
-    """
-    try:
-        if not load_models():
-            return {"error": "Model AI belum didownload. Jalankan download_models.py."}
-
-        # 1. Check file size
-        file_size = os.path.getsize(audio_path)
-        print(f"Processing audio: {audio_path} (Size: {file_size} bytes)")
-        
-        if file_size < 1000: # Less than 1KB is likely empty/silence
-            print("Audio file too small, returning empty.")
-            return {"text": "Tidak terdengar suara."}
-
-        # 2. Convert to WAV using ffmpeg (Force conversion to avoid container issues)
-        wav_path = audio_path + ".wav"
-        os.system(f'ffmpeg -i "{audio_path}" -ar 16000 -ac 1 -c:a pcm_s16le "{wav_path}" -y')
-        
-        if not os.path.exists(wav_path):
-            print("FFmpeg conversion failed.")
-            return {"error": "Gagal memproses audio (FFmpeg error)."}
-
-        # 3. Transcribe
-        # Try with VAD disabled and specific parameters for short audio
-        print("Transcribing with language='id' and vad_filter=False...")
-        segments, info = whisper_model.transcribe(
-            wav_path, 
-            beam_size=5, 
-            language="id",
-            vad_filter=False,
-            condition_on_previous_text=False
-        )
-        transcribed_text = " ".join([segment.text for segment in segments]).strip()
-        print(f"Transcribed text (ID): '{transcribed_text}'")
-        
-        # Fallback: Auto-detect language if empty
-        if not transcribed_text:
-            print("Retrying with auto language detection...")
-            segments, info = whisper_model.transcribe(
-                wav_path, 
-                beam_size=5, 
-                vad_filter=False
-            )
-            transcribed_text = " ".join([segment.text for segment in segments]).strip()
-            print(f"Transcribed text (Auto): '{transcribed_text}'")
-
-        # Cleanup WAV
-        if os.path.exists(wav_path):
-            os.remove(wav_path)
-            
-        if not transcribed_text:
-            return {"text": "Tidak terdengar suara."}
-            
-        return {"text": transcribed_text}
-        
-    except Exception as e:
-        print(f"Error processing step: {e}")
-        traceback.print_exc()
-        return {"error": str(e)}
-
-def generate_final_summary(answers):
-    """
-    Generate final JSON summary from all answers using local LLM.
+    Transcribe full audio and format as dialogue using LLM.
     """
     try:
         if not load_models():
             return {"error": "Model AI belum didownload."}
 
-        answers_str = json.dumps(answers, indent=2, ensure_ascii=False)
+        # 1. Check file size
+        file_size = os.path.getsize(audio_path)
+        print(f"Processing audio: {audio_path} (Size: {file_size} bytes)")
         
-        # Prompt for Llama 3 / Instruct models
-        # Llama 3 uses specific tokens: <|begin_of_text|><|start_header_id|>system<|end_header_id|> ...
-        # But llama-cpp-python might handle chat format if we use create_chat_completion, 
-        # or we can just use a raw prompt. Let's use raw prompt for control or create_chat_completion if available.
+        if file_size < 1000:
+            return {"error": "File audio terlalu kecil/kosong."}
+
+        # 2. Convert to WAV
+        wav_path = audio_path + ".wav"
+        os.system(f'ffmpeg -i "{audio_path}" -ar 16000 -ac 1 -c:a pcm_s16le "{wav_path}" -y')
         
-        # Using standard chat format for Llama 3
+        if not os.path.exists(wav_path):
+            return {"error": "Gagal konversi audio (FFmpeg)."}
+
+        # 3. Transcribe (Full)
+        print("Transcribing full audio...")
+        segments, info = whisper_model.transcribe(
+            wav_path, 
+            beam_size=5, 
+            language="id",
+            vad_filter=False
+        )
+        
+        # Combine segments with timestamps to help LLM guess speakers
+        raw_transcript = ""
+        for segment in segments:
+            raw_transcript += f"[{segment.start:.2f}s] {segment.text}\n"
+            
+        print(f"Raw Transcript Length: {len(raw_transcript)}")
+        
+        # Cleanup WAV
+        if os.path.exists(wav_path):
+            os.remove(wav_path)
+
+        # 4. Format as Dialogue using LLM
+        print("Formatting as dialogue...")
         messages = [
-            {"role": "system", "content": "Anda adalah asisten medis AI. Analisis jawaban pasien TB dan buat ringkasan JSON."},
+            {"role": "system", "content": "Anda adalah asisten transkripsi. Tugas Anda adalah mengubah teks mentah menjadi format dialog wawancara (P1 = Penanya, I1 = Informan/Narasumber)."},
             {"role": "user", "content": f"""
-Berikut adalah hasil wawancara dengan pasien Tuberculosis (TB):
+Berikut adalah transkrip mentah dari wawancara:
 
-{answers_str}
+{raw_transcript}
 
-Tugas Anda:
-1. Analisis jawaban-jawaban tersebut.
-2. Buat ringkasan medis dalam format JSON.
-3. Format JSON harus memiliki key:
-    - "keluhan_utama": Ringkasan keluhan utama.
-    - "gejala": Daftar gejala yang terdeteksi (batuk, demam, dll).
-    - "data_vital": Data angka jika ada (suhu, berat badan).
-    - "analisis_tb": Analisis risiko TB berdasarkan jawaban (Rendah/Sedang/Tinggi) dan alasannya.
-    - "saran": Saran medis selanjutnya.
-
-Output HANYA JSON. Jangan ada teks lain.
+Tugas:
+1. Rapikan teks tersebut.
+2. Ubah menjadi format dialog seperti ini:
+   P1 : [Teks Penanya]
+   I1 : [Teks Informan]
+   
+3. Jika sulit membedakan, gunakan perkiraan terbaik berdasarkan konteks tanya-jawab.
+4. Output HANYA teks dialog. Jangan ada komentar lain.
 """}
         ]
         
         output = llm_model.create_chat_completion(
             messages=messages,
-            max_tokens=1024,
-            temperature=0.2,
-            response_format={"type": "json_object"} # Llama.cpp python supports this for some models/versions
+            max_tokens=2048,
+            temperature=0.3
         )
         
-        result_text = output['choices'][0]['message']['content'].strip()
-        
-        # Clean up if needed (sometimes it adds markdown)
-        if result_text.startswith("```json"):
-            result_text = result_text[7:]
-        if result_text.endswith("```"):
-            result_text = result_text[:-3]
-            
-        try:
-            return json.loads(result_text)
-        except:
-            # Fallback parsing
-            start = result_text.find('{')
-            end = result_text.rfind('}') + 1
-            if start != -1 and end != -1:
-                return json.loads(result_text[start:end])
-            else:
-                return {"error": "Gagal parsing JSON", "raw": result_text}
+        formatted_content = output['choices'][0]['message']['content'].strip()
+        return {"content": formatted_content}
         
     except Exception as e:
-        print(f"Error in generate_final_summary: {e}")
-        return {
-            "keluhan_utama": "Gagal memproses summary",
-            "gejala": [],
-            "data_vital": "N/A",
-            "analisis_tb": "Error",
-            "saran": "Silakan konsultasi langsung."
-        }
+        print(f"Error processing transcription: {e}")
+        traceback.print_exc()
+        return {"error": str(e)}
 

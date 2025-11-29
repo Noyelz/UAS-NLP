@@ -1,0 +1,151 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="card">
+    <div class="card-header">
+        <h2><i class="fas fa-microphone-alt"></i> Buat Transkrip Baru</h2>
+        <p class="text-light">Isi data partisipan dan rekam/upload wawancara.</p>
+    </div>
+
+    <form id="transcriptionForm">
+        <div class="form-group">
+            <label>Kode Partisipan</label>
+            <input type="text" name="participant_code" placeholder="Contoh: P1" required>
+        </div>
+
+        <div class="form-group">
+            <label>Nama</label>
+            <input type="text" name="participant_name" placeholder="Nama Lengkap" required>
+        </div>
+
+        <div class="flex">
+            <div class="form-group" style="flex: 1;">
+                <label>Usia</label>
+                <input type="text" name="participant_age" placeholder="Contoh: 34 tahun" required>
+            </div>
+            <div class="form-group" style="flex: 1;">
+                <label>Pendidikan Terakhir</label>
+                <input type="text" name="participant_education" placeholder="Contoh: SMP" required>
+            </div>
+        </div>
+
+        <div class="form-group">
+            <label>Audio Wawancara</label>
+            <div style="display: flex; gap: 1rem; align-items: center;">
+                <button type="button" id="recordBtn" class="btn btn-secondary">
+                    <i class="fas fa-microphone"></i> Rekam
+                </button>
+                <span id="recordStatus">Siap merekam</span>
+                <input type="file" name="audio" id="audioInput" accept="audio/*" style="display: none;">
+                <button type="button" onclick="document.getElementById('audioInput').click()" class="btn btn-secondary">
+                    <i class="fas fa-upload"></i> Upload File
+                </button>
+            </div>
+            <p id="fileName" class="text-light mt-4"></p>
+        </div>
+
+        <button type="submit" class="btn btn-primary" id="submitBtn">
+            <i class="fas fa-magic"></i> Proses Transkripsi
+        </button>
+    </form>
+
+    <div id="resultArea" class="hidden mt-4">
+        <h3>Hasil Transkripsi</h3>
+        <textarea id="transcriptContent" rows="15" readonly></textarea>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    const recordBtn = document.getElementById('recordBtn');
+    const recordStatus = document.getElementById('recordStatus');
+    const audioInput = document.getElementById('audioInput');
+    const fileName = document.getElementById('fileName');
+    const form = document.getElementById('transcriptionForm');
+    const submitBtn = document.getElementById('submitBtn');
+    const resultArea = document.getElementById('resultArea');
+    const transcriptContent = document.getElementById('transcriptContent');
+
+    let mediaRecorder;
+    let audioChunks = [];
+    let recordedBlob = null;
+
+    // File Upload Handler
+    audioInput.addEventListener('change', (e) => {
+        if (e.target.files.length > 0) {
+            fileName.textContent = "File terpilih: " + e.target.files[0].name;
+            recordedBlob = null; // Clear recorded if upload selected
+        }
+    });
+
+    // Recording Handler
+    recordBtn.addEventListener('click', async () => {
+        if (!mediaRecorder || mediaRecorder.state === 'inactive') {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                mediaRecorder = new MediaRecorder(stream);
+                audioChunks = [];
+
+                mediaRecorder.ondataavailable = (e) => audioChunks.push(e.data);
+                mediaRecorder.onstop = () => {
+                    recordedBlob = new Blob(audioChunks, { type: 'audio/webm' });
+                    fileName.textContent = "Rekaman suara siap diproses.";
+                    audioInput.value = ''; // Clear upload
+                };
+
+                mediaRecorder.start();
+                recordBtn.classList.add('btn-danger');
+                recordBtn.innerHTML = '<i class="fas fa-stop"></i> Stop';
+                recordStatus.textContent = "Sedang merekam...";
+            } catch (err) {
+                alert("Gagal akses mikrofon: " + err);
+            }
+        } else {
+            mediaRecorder.stop();
+            recordBtn.classList.remove('btn-danger');
+            recordBtn.innerHTML = '<i class="fas fa-microphone"></i> Rekam';
+            recordStatus.textContent = "Rekaman selesai.";
+        }
+    });
+
+    // Submit Handler
+    form.addEventListener('submit', async (e) => {
+        e.preventDefault();
+
+        const formData = new FormData(form);
+
+        // Prefer recorded audio if available, else check file input
+        if (recordedBlob) {
+            formData.set('audio', recordedBlob, 'recording.webm');
+        } else if (audioInput.files.length === 0) {
+            alert("Mohon rekam atau upload audio terlebih dahulu.");
+            return;
+        }
+
+        submitBtn.disabled = true;
+        submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Memproses...';
+
+        try {
+            const response = await fetch('/api/transcribe', {
+                method: 'POST',
+                body: formData
+            });
+            const data = await response.json();
+
+            if (data.error) {
+                alert("Error: " + data.error);
+            } else {
+                resultArea.classList.remove('hidden');
+                transcriptContent.value = data.content;
+                alert("Transkripsi selesai!");
+            }
+        } catch (err) {
+            alert("Terjadi kesalahan koneksi.");
+        } finally {
+            submitBtn.disabled = false;
+            submitBtn.innerHTML = '<i class="fas fa-magic"></i> Proses Transkripsi';
+        }
+    });
+</script>
+{% endblock %}

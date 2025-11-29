@@ -22,6 +22,15 @@ def create_app():
     with app.app_context():
         db.create_all()
         
+        # Seed Super Admin
+        if not User.query.filter_by(username='adminsuper').first():
+            print("Seeding Super Admin account...")
+            super_admin = User(username='adminsuper', role='admin_iii')
+            super_admin.set_password('adminsuper321')
+            db.session.add(super_admin)
+            db.session.commit()
+            print("Super Admin created.")
+        
     return app
 
 @login_manager.user_loader
