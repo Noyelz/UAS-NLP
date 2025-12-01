@@ -1,12 +1,12 @@
 import os
 import json
+import io
 from flask import Blueprint, render_template, redirect, url_for, request, flash, jsonify, session, send_file
 from flask_login import login_user, logout_user, login_required, current_user
 from werkzeug.utils import secure_filename
 from extensions import db
-from models import User, Transcript
-from services import process_transcription
-import io
+from models import User, Transcript, TranscriptionTask
+from services import add_task, get_task_status, generate_docx
 
 main_bp = Blueprint('main', __name__)
 
@@ -96,44 +96,48 @@ def api_transcribe():
         
     audio_file = request.files['audio']
     
-    # Metadata
-    metadata = {
-        'participant_code': request.form.get('participant_code'),
-        'participant_name': request.form.get('participant_name'),
-        'participant_age': request.form.get('participant_age'),
-        'participant_education': request.form.get('participant_education')
-    }
-    
-    # Save temp
+    # Save to persistent storage for background processing
     filename = secure_filename(f"{current_user.id}_{audio_file.filename}")
     filepath = os.path.join('static', 'uploads', filename)
     os.makedirs(os.path.join('static', 'uploads'), exist_ok=True)
     audio_file.save(filepath)
     
-    # Process
-    result = process_transcription(filepath)
+    # Queue Task
+    task_id = add_task(filepath, current_user.id)
     
-    # Cleanup
-    if os.path.exists(filepath):
-        os.remove(filepath)
-        
-    if 'error' in result:
-        return jsonify({'error': result['error']}), 500
-        
-    # Save to DB
-    new_transcript = Transcript(
-        user_id=current_user.id,
-        filename=audio_file.filename,
-        participant_code=metadata['participant_code'],
-        participant_name=metadata['participant_name'],
-        participant_age=metadata['participant_age'],
-        participant_education=metadata['participant_education'],
-        content=result['content']
-    )
-    db.session.add(new_transcript)
-    db.session.commit()
+    return jsonify({'success': True, 'task_id': task_id})
+
+@main_bp.route('/api/status/<task_id>', methods=['GET'])
+@login_required
+def api_status(task_id):
+    status = get_task_status(task_id)
+    if not status:
+        return jsonify({'error': 'Task not found'}), 404
+    return jsonify(status)
+
+@main_bp.route('/api/tasks', methods=['GET'])
+@login_required
+def api_get_tasks():
+    # Get all tasks for current user that are NOT completed or failed
+    # OR tasks that were completed/failed recently (optional, but for now let's show all active)
+    # Actually, user wants to see progress. So we show queued and processing.
+    # We can also show completed ones if we want a history, but for the "Queue" UI, active is key.
     
-    return jsonify({'success': True, 'content': result['content']})
+    tasks = TranscriptionTask.query.filter_by(user_id=current_user.id).filter(
+        TranscriptionTask.status.in_(['queued', 'processing'])
+    ).order_by(TranscriptionTask.created_at.desc()).all()
+    
+    task_list = []
+    for t in tasks:
+        task_list.append({
+            'id': t.id,
+            'filename': t.filename,
+            'status': t.status,
+            'progress': t.progress,
+            'message': t.message
+        })
+        
+    return jsonify(task_list)
 
 # --- Admin Routes (Admin II & III) ---
 @main_bp.route('/admin')
@@ -170,10 +174,8 @@ def upgrade_user(user_id):
 @main_bp.route('/admin/download/<int:transcript_id>')
 @login_required
 def download_transcript(transcript_id):
+    # Check permissions
     if current_user.role == 'admin_i':
-        # Admin I can only download their own? Or strictly no access?
-        # Requirement says Admin Boss can download all. Admin I creates.
-        # Let's restrict to Admin II/III for now based on requirement "Admin Boss bisa download transkrip semuanya"
         flash('Akses ditolak.')
         return redirect(url_for('main.transcription'))
         
@@ -203,6 +205,25 @@ Oleh: {transcript.user.username}
         as_attachment=True,
         download_name=f"transcript_{transcript.participant_code}.txt",
         mimetype='text/plain'
+    )
+
+@main_bp.route('/admin/download/docx/<int:transcript_id>')
+@login_required
+def download_transcript_docx(transcript_id):
+    # Check permissions
+    if current_user.role == 'admin_i':
+        flash('Akses ditolak.')
+        return redirect(url_for('main.transcription'))
+        
+    transcript = Transcript.query.get_or_404(transcript_id)
+    
+    mem = generate_docx(transcript)
+    
+    return send_file(
+        mem,
+        as_attachment=True,
+        download_name=f"transcript_{transcript.participant_code}.docx",
+        mimetype='application/vnd.openxmlformats-officedocument.wordprocessingml.document'
     )
 
 # --- Profile Routes ---

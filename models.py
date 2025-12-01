@@ -20,7 +20,7 @@ class Transcript(db.Model):
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
     filename = db.Column(db.String(255), nullable=False)
     
-    # Metadata fields (JSON storage is also an option, but individual columns are easier to query)
+    # Metadata fields
     participant_code = db.Column(db.String(50))
     participant_name = db.Column(db.String(100))
     participant_age = db.Column(db.String(20))
@@ -30,3 +30,17 @@ class Transcript(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     
     user = db.relationship('User', backref=db.backref('transcripts', lazy=True))
+
+class TranscriptionTask(db.Model):
+    id = db.Column(db.String(36), primary_key=True) # UUID
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    filename = db.Column(db.String(255), nullable=False)
+    status = db.Column(db.String(20), default='queued') # queued, processing, completed, failed
+    progress = db.Column(db.Integer, default=0)
+    message = db.Column(db.String(255), default='Menunggu antrian...')
+    error = db.Column(db.Text, nullable=True)
+    result_id = db.Column(db.Integer, db.ForeignKey('transcript.id'), nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    
+    user = db.relationship('User', backref=db.backref('tasks', lazy=True))
+    transcript = db.relationship('Transcript', backref=db.backref('task', uselist=False))

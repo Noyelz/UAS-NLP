@@ -4,127 +4,241 @@
 <div class="card">
     <div class="card-header">
         <h2><i class="fas fa-microphone-alt"></i> Buat Transkrip Baru</h2>
-        <p class="text-light">Isi data partisipan dan rekam/upload wawancara.</p>
+        <p class="text-light">Upload file audio untuk ditranskrip secara otomatis. Bisa upload banyak file sekaligus.
+        </p>
     </div>
 
-    <form id="transcriptionForm">
-        <div class="form-group">
-            <label>Kode Partisipan</label>
-            <input type="text" name="participant_code" placeholder="Contoh: P1" required>
+    <div class="card-body">
+        <!-- Drag and Drop Zone -->
+        <div id="dropZone" class="drop-zone">
+            <i class="fas fa-cloud-upload-alt fa-3x mb-3"></i>
+            <p>Drag & Drop file audio di sini</p>
+            <p class="text-sm text-muted">atau</p>
+            <button type="button" class="btn btn-secondary" onclick="document.getElementById('audioInput').click()">
+                Pilih File (Bisa Banyak)
+            </button>
+            <input type="file" id="audioInput" accept="audio/*" multiple style="display: none;">
         </div>
 
-        <div class="form-group">
-            <label>Nama</label>
-            <input type="text" name="participant_name" placeholder="Nama Lengkap" required>
-        </div>
-
-        <div class="flex">
-            <div class="form-group" style="flex: 1;">
-                <label>Usia</label>
-                <input type="text" name="participant_age" placeholder="Contoh: 34 tahun" required>
-            </div>
-            <div class="form-group" style="flex: 1;">
-                <label>Pendidikan Terakhir</label>
-                <input type="text" name="participant_education" placeholder="Contoh: SMP" required>
+        <!-- Queue List -->
+        <div id="queueArea" class="mt-4 hidden">
+            <h4>Antrian Proses</h4>
+            <div id="queueList">
+                <!-- Queue Items will be injected here -->
             </div>
         </div>
 
-        <div class="form-group">
-            <label>Audio Wawancara</label>
-            <div style="display: flex; gap: 1rem; align-items: center;">
-                <button type="button" id="recordBtn" class="btn btn-secondary">
-                    <i class="fas fa-microphone"></i> Rekam
-                </button>
-                <span id="recordStatus">Siap merekam</span>
-                <input type="file" name="audio" id="audioInput" accept="audio/*" style="display: none;">
-                <button type="button" onclick="document.getElementById('audioInput').click()" class="btn btn-secondary">
-                    <i class="fas fa-upload"></i> Upload File
-                </button>
-            </div>
-            <p id="fileName" class="text-light mt-4"></p>
-        </div>
-
-        <button type="submit" class="btn btn-primary" id="submitBtn">
-            <i class="fas fa-magic"></i> Proses Transkripsi
-        </button>
-    </form>
-
-    <div id="resultArea" class="hidden mt-4">
-        <h3>Hasil Transkripsi</h3>
-        <textarea id="transcriptContent" rows="15" readonly></textarea>
     </div>
 </div>
+
+<style>
+    .drop-zone {
+        border: 2px dashed #ccc;
+        border-radius: 10px;
+        padding: 40px;
+        text-align: center;
+        cursor: pointer;
+        transition: all 0.3s ease;
+        background-color: #f8f9fa;
+    }
+
+    .drop-zone:hover,
+    .drop-zone.dragover {
+        border-color: #28a745;
+        background-color: #e9ecef;
+    }
+
+    .hidden {
+        display: none;
+    }
+
+    .queue-item {
+        background: #fff;
+        border: 1px solid #ddd;
+        border-radius: 8px;
+        padding: 15px;
+        margin-bottom: 10px;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+    }
+
+    .queue-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 10px;
+    }
+
+    .file-name {
+        font-weight: bold;
+        color: #333;
+    }
+
+    .status-badge {
+        padding: 4px 8px;
+        border-radius: 12px;
+        font-size: 0.8em;
+        font-weight: bold;
+    }
+
+    .status-queued {
+        background: #ffc107;
+        color: #000;
+    }
+
+    .status-processing {
+        background: #17a2b8;
+        color: #fff;
+    }
+
+    .status-completed {
+        background: #28a745;
+        color: #fff;
+    }
+
+    .status-failed {
+        background: #dc3545;
+        color: #fff;
+    }
+
+    .result-box {
+        background: #f8f9fa;
+        padding: 10px;
+        border-radius: 5px;
+        margin-top: 10px;
+        font-size: 0.9em;
+    }
+</style>
 {% endblock %}
 
 {% block scripts %}
 <script>
-    const recordBtn = document.getElementById('recordBtn');
-    const recordStatus = document.getElementById('recordStatus');
+    const dropZone = document.getElementById('dropZone');
     const audioInput = document.getElementById('audioInput');
-    const fileName = document.getElementById('fileName');
-    const form = document.getElementById('transcriptionForm');
-    const submitBtn = document.getElementById('submitBtn');
-    const resultArea = document.getElementById('resultArea');
-    const transcriptContent = document.getElementById('transcriptContent');
+    const queueArea = document.getElementById('queueArea');
+    const queueList = document.getElementById('queueList');
 
-    let mediaRecorder;
-    let audioChunks = [];
-    let recordedBlob = null;
+    // Store active tasks: {taskId: {element, interval}}
+    let activeTasks = {};
 
-    // File Upload Handler
-    audioInput.addEventListener('change', (e) => {
-        if (e.target.files.length > 0) {
-            fileName.textContent = "File terpilih: " + e.target.files[0].name;
-            recordedBlob = null; // Clear recorded if upload selected
-        }
-    });
+    // Load active tasks on startup
+    document.addEventListener('DOMContentLoaded', loadActiveTasks);
 
-    // Recording Handler
-    recordBtn.addEventListener('click', async () => {
-        if (!mediaRecorder || mediaRecorder.state === 'inactive') {
-            try {
-                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-                mediaRecorder = new MediaRecorder(stream);
-                audioChunks = [];
+    async function loadActiveTasks() {
+        try {
+            const response = await fetch('/api/tasks');
+            const tasks = await response.json();
 
-                mediaRecorder.ondataavailable = (e) => audioChunks.push(e.data);
-                mediaRecorder.onstop = () => {
-                    recordedBlob = new Blob(audioChunks, { type: 'audio/webm' });
-                    fileName.textContent = "Rekaman suara siap diproses.";
-                    audioInput.value = ''; // Clear upload
-                };
-
-                mediaRecorder.start();
-                recordBtn.classList.add('btn-danger');
-                recordBtn.innerHTML = '<i class="fas fa-stop"></i> Stop';
-                recordStatus.textContent = "Sedang merekam...";
-            } catch (err) {
-                alert("Gagal akses mikrofon: " + err);
+            if (tasks.length > 0) {
+                queueArea.classList.remove('hidden');
+                tasks.forEach(task => {
+                    createTaskElement(task.id, task.filename, task.status, task.progress, task.message);
+                    if (task.status === 'queued' || task.status === 'processing') {
+                        startPolling(task.id, task.id, null); // Use task.id as uniqueId for restored tasks
+                    } else if (task.status === 'completed' && task.result) {
+                        // If completed, show result immediately
+                        showResult(task.id, task.result);
+                    }
+                });
             }
-        } else {
-            mediaRecorder.stop();
-            recordBtn.classList.remove('btn-danger');
-            recordBtn.innerHTML = '<i class="fas fa-microphone"></i> Rekam';
-            recordStatus.textContent = "Rekaman selesai.";
+        } catch (err) {
+            console.error("Failed to load active tasks", err);
         }
+    }
+
+    // Drag & Drop Events
+    ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+        dropZone.addEventListener(eventName, preventDefaults, false);
     });
 
-    // Submit Handler
-    form.addEventListener('submit', async (e) => {
+    function preventDefaults(e) {
         e.preventDefault();
+        e.stopPropagation();
+    }
 
-        const formData = new FormData(form);
+    ['dragenter', 'dragover'].forEach(eventName => {
+        dropZone.addEventListener(eventName, highlight, false);
+    });
 
-        // Prefer recorded audio if available, else check file input
-        if (recordedBlob) {
-            formData.set('audio', recordedBlob, 'recording.webm');
-        } else if (audioInput.files.length === 0) {
-            alert("Mohon rekam atau upload audio terlebih dahulu.");
-            return;
+    ['dragleave', 'drop'].forEach(eventName => {
+        dropZone.addEventListener(eventName, unhighlight, false);
+    });
+
+    function highlight(e) {
+        dropZone.classList.add('dragover');
+    }
+
+    function unhighlight(e) {
+        dropZone.classList.remove('dragover');
+    }
+
+    dropZone.addEventListener('drop', handleDrop, false);
+
+    function handleDrop(e) {
+        const dt = e.dataTransfer;
+        const files = dt.files;
+        handleFiles(files);
+    }
+
+    audioInput.addEventListener('change', function () {
+        handleFiles(this.files);
+    });
+
+    function handleFiles(files) {
+        if (files.length > 0) {
+            queueArea.classList.remove('hidden');
+            Array.from(files).forEach(uploadFile);
         }
+    }
 
-        submitBtn.disabled = true;
-        submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Memproses...';
+    function createTaskElement(taskId, filename, status, progress, message) {
+        // Avoid duplicates
+        if (document.getElementById(`badge-${taskId}`)) return;
+
+        const item = document.createElement('div');
+        item.className = 'queue-item';
+        item.id = `item-${taskId}`; // Ensure item has ID
+
+        item.innerHTML = `
+            <div class="queue-header">
+                <span class="file-name"><i class="fas fa-file-audio"></i> ${filename}</span>
+                <span class="status-badge status-${status}" id="badge-${taskId}">${status}</span>
+            </div>
+            <div class="progress" style="height: 20px;">
+                <div class="progress-bar progress-bar-striped progress-bar-animated" id="bar-${taskId}" style="width: ${progress}%">
+                    <span id="text-${taskId}" class="text-white font-weight-bold" style="padding-left: 5px;">${progress}%</span>
+                </div>
+            </div>
+            <p class="text-muted text-sm mt-1" id="msg-${taskId}">${message}</p>
+            <div id="result-${taskId}" class="hidden"></div>
+        `;
+        queueList.prepend(item);
+        return item;
+    }
+
+    async function uploadFile(file) {
+        // Use a temp ID for the UI until we get the real Task ID
+        const tempId = 'temp-' + Date.now() + Math.random();
+
+        // Create initial UI
+        const item = document.createElement('div');
+        item.className = 'queue-item';
+        item.id = `item-${tempId}`;
+        item.innerHTML = `
+            <div class="queue-header">
+                <span class="file-name"><i class="fas fa-file-audio"></i> ${file.name}</span>
+                <span class="status-badge status-queued">Uploading...</span>
+            </div>
+            <div class="progress" style="height: 20px;">
+                <div class="progress-bar progress-bar-striped progress-bar-animated" style="width: 100%">
+                    <span class="text-white font-weight-bold" style="padding-left: 5px;">Uploading...</span>
+                </div>
+            </div>
+            <p class="text-muted text-sm mt-1">Mengupload file...</p>
+        `;
+        queueList.prepend(item);
+
+        const formData = new FormData();
+        formData.append('audio', file);
 
         try {
             const response = await fetch('/api/transcribe', {
@@ -133,19 +247,137 @@
             });
             const data = await response.json();
 
-            if (data.error) {
-                alert("Error: " + data.error);
+            if (data.success) {
+                // Remove temp item and replace with real task item
+                item.remove();
+                createTaskElement(data.task_id, file.name, 'queued', 0, 'Menunggu antrian...');
+                startPolling(data.task_id, data.task_id, null);
             } else {
-                resultArea.classList.remove('hidden');
-                transcriptContent.value = data.content;
-                alert("Transkripsi selesai!");
+                item.innerHTML = `
+                    <div class="queue-header">
+                        <span class="file-name"><i class="fas fa-file-audio"></i> ${file.name}</span>
+                        <span class="status-badge status-failed">Gagal</span>
+                    </div>
+                    <p class="text-danger mt-1">${data.error}</p>
+                `;
             }
         } catch (err) {
-            alert("Terjadi kesalahan koneksi.");
-        } finally {
-            submitBtn.disabled = false;
-            submitBtn.innerHTML = '<i class="fas fa-magic"></i> Proses Transkripsi';
+            item.innerHTML = `
+                <div class="queue-header">
+                    <span class="file-name"><i class="fas fa-file-audio"></i> ${file.name}</span>
+                    <span class="status-badge status-failed">Gagal</span>
+                </div>
+                <p class="text-danger mt-1">Upload failed</p>
+            `;
         }
-    });
+    }
+
+    function startPolling(taskId, uniqueId, element) {
+        // uniqueId is now same as taskId for consistency
+        const badge = document.getElementById(`badge-${taskId}`);
+        const bar = document.getElementById(`bar-${taskId}`);
+        const msg = document.getElementById(`msg-${taskId}`);
+        const text = document.getElementById(`text-${taskId}`);
+
+        if (activeTasks[taskId]) clearInterval(activeTasks[taskId]);
+
+        activeTasks[taskId] = setInterval(async () => {
+            try {
+                const res = await fetch(`/api/status/${taskId}`);
+                if (!res.ok) {
+                    if (res.status === 404) {
+                        clearInterval(activeTasks[taskId]);
+                        delete activeTasks[taskId];
+                    }
+                    return;
+                }
+
+                const status = await res.json();
+
+                // Update UI
+                const percent = status.progress || 0;
+                if (bar) bar.style.width = percent + '%';
+                if (text) text.textContent = percent + '%';
+                if (msg) msg.textContent = status.message;
+
+                if (status.status === 'processing') {
+                    if (badge) {
+                        badge.className = 'status-badge status-processing';
+                        badge.textContent = 'Processing';
+                    }
+                }
+
+                if (status.status === 'completed') {
+                    clearInterval(activeTasks[taskId]);
+                    delete activeTasks[taskId];
+
+                    if (badge) {
+                        badge.className = 'status-badge status-completed';
+                        badge.textContent = 'Selesai';
+                    }
+                    if (bar) {
+                        bar.classList.remove('progress-bar-animated');
+                        bar.classList.add('bg-success');
+                    }
+
+                    showResult(taskId, status.result);
+                } else if (status.status === 'failed') {
+                    clearInterval(activeTasks[taskId]);
+                    delete activeTasks[taskId];
+                    markFailed(taskId, status.error);
+                }
+            } catch (err) {
+                console.error("Polling error", err);
+            }
+        }, 2000);
+    }
+
+    function markFailed(uniqueId, error) {
+        const badge = document.getElementById(`badge-${uniqueId}`);
+        const msg = document.getElementById(`msg-${uniqueId}`);
+        const bar = document.getElementById(`bar-${uniqueId}`);
+
+        if (badge) {
+            badge.className = 'status-badge status-failed';
+            badge.textContent = 'Gagal';
+        }
+        if (msg) {
+            msg.textContent = error;
+            msg.classList.remove('text-muted');
+            msg.classList.add('text-danger');
+        }
+        if (bar) {
+            bar.classList.add('bg-danger');
+            bar.style.width = '100%';
+        }
+    }
+
+    function showResult(uniqueId, result) {
+        const resultDiv = document.getElementById(`result-${uniqueId}`);
+        if (!resultDiv) return;
+
+        resultDiv.classList.remove('hidden');
+        resultDiv.className = 'result-box';
+
+        const meta = result.metadata || {};
+
+        resultDiv.innerHTML = `
+            <div class="row">
+                <div class="col-md-6">
+                    <strong>Partisipan:</strong> ${meta.participant_code || '-'} - ${meta.participant_name || '-'}<br>
+                    <strong>Info:</strong> ${meta.participant_age || '-'} thn, ${meta.participant_education || '-'}
+                </div>
+                <div class="col-md-6 text-right">
+                    <a href="/admin/download/docx/${result.transcript_id}" class="btn btn-sm btn-success">
+                        <i class="fas fa-file-word"></i> Download Word
+                    </a>
+                </div>
+            </div>
+            <hr>
+            <div style="max-height: 150px; overflow-y: auto; font-size: 0.85em; color: #555;">
+                ${result.content.substring(0, 300)}...
+            </div>
+        `;
+    }
 </script>
 {% endblock %}

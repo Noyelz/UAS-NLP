@@ -1,5 +1,10 @@
 /.env
+*.ipynb
 __pycache__/
 instance/
 models/
-/testi.ipynb
+uploads/
+testi.ipynb
+PROJECT_HISTORY.md
+instance/health_app.db
+instance/

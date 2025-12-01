@@ -4,6 +4,6 @@ flask-login
 python-dotenv
 email_validator
 faster-whisper
-
 huggingface-hub
-
+python-docx
+llama-cpp-python

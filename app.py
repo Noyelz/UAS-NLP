@@ -30,6 +30,10 @@ def create_app():
             db.session.add(super_admin)
             db.session.commit()
             print("Super Admin created.")
+            
+    # Start Background Worker
+    from services import start_worker
+    start_worker(app)
         
     return app
 
